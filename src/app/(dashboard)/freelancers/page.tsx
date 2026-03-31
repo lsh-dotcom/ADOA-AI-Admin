@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatKRW } from "@/lib/format";
+import { useRealtimeSubscription } from "@/hooks/use-realtime";
 
 type Freelancer = {
   id: string;
@@ -96,6 +97,8 @@ export default function FreelancersPage() {
   useEffect(() => {
     fetchFreelancers();
   }, [fetchFreelancers]);
+
+  useRealtimeSubscription("freelancers", fetchFreelancers);
 
   const openAdd = () => {
     setForm(emptyForm);

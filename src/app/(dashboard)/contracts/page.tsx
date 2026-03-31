@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatKRW, formatDate, CONTRACT_STATUS_MAP } from "@/lib/format";
+import { useRealtimeSubscription } from "@/hooks/use-realtime";
 
 type Contract = {
   id: string;
@@ -68,6 +69,8 @@ export default function ContractsPage() {
   useEffect(() => {
     fetchContracts();
   }, [fetchContracts]);
+
+  useRealtimeSubscription("contracts", fetchContracts);
 
   const toggleSort = (field: SortField) => {
     if (sortBy === field) {

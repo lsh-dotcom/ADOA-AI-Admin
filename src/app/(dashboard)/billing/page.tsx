@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatKRW, formatDate, PAYMENT_STATUS_MAP } from "@/lib/format";
+import { useRealtimeSubscription } from "@/hooks/use-realtime";
 
 type Payment = {
   id: string;
@@ -117,6 +118,8 @@ export default function BillingPage() {
     if (summaryData.monthly_revenue !== undefined) setSummary(summaryData);
     setLoading(false);
   }, [activeTab]);
+
+  useRealtimeSubscription("payments", fetchData);
 
   useEffect(() => {
     fetchData();

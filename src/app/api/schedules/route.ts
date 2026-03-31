@@ -50,3 +50,27 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json(enriched);
 }
+
+// POST /api/schedules - 일정 수동 추가
+export async function POST(request: NextRequest) {
+  const supabase = createAdminClient();
+  const body = await request.json();
+
+  const { data, error } = await supabase
+    .from("project_schedules")
+    .insert({
+      contract_id: body.contract_id,
+      phase: body.phase || "custom",
+      phase_name: body.phase_name,
+      start_date: body.start_date || null,
+      end_date: body.end_date || null,
+      status: body.status || "pending",
+      assigned_to: body.assigned_to || null,
+      notes: body.notes || null,
+    })
+    .select("*")
+    .single();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json(data, { status: 201 });
+}

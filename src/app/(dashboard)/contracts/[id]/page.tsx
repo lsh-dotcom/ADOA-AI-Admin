@@ -149,6 +149,13 @@ export default function ContractDetailPage() {
   const [assignForm, setAssignForm] = useState({ freelancer_id: "", work_days: "", daily_rate: "" });
   const [assignSaving, setAssignSaving] = useState(false);
   const [selectedAssignments, setSelectedAssignments] = useState<Set<string>>(new Set());
+  // 계약서 생성
+  const [docGenerating, setDocGenerating] = useState(false);
+  const [docText, setDocText] = useState<string | null>(null);
+  // 일정 수동 추가
+  const [showScheduleForm, setShowScheduleForm] = useState(false);
+  const [scheduleForm, setScheduleForm] = useState({ phase_name: "", start_date: "", end_date: "" });
+  const [scheduleSaving, setScheduleSaving] = useState(false);
 
   const fetchContract = useCallback(async () => {
     try {
@@ -257,6 +264,81 @@ export default function ContractDetailPage() {
     setSelectedAssignments(new Set(ids));
   };
 
+  // 계약서 AI 생성
+  const handleGenerateDoc = async () => {
+    if (!contract) return;
+    setDocGenerating(true);
+    try {
+      const res = await fetch(`/api/contracts/${contract.id}/generate-doc`, { method: "POST" });
+      const data = await res.json();
+      if (data.document) setDocText(data.document);
+      else alert(data.error || "계약서 생성 실패");
+    } catch { alert("오류가 발생했습니다."); }
+    setDocGenerating(false);
+  };
+
+  // 정산 상태 변경
+  const handlePaymentAction = async (paymentId: string, action: "invoiced" | "paid", payment: Payment) => {
+    try {
+      if (action === "paid") {
+        await fetch(`/api/payments/${paymentId}/confirm`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            paid_date: new Date().toISOString().split("T")[0],
+            paid_amount: String(payment.total_with_vat || payment.amount),
+          }),
+        });
+      } else if (action === "invoiced") {
+        // 청구 완료 처리 — tax-invoice endpoint 활용
+        await fetch(`/api/payments/${paymentId}/tax-invoice`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tax_invoice_date: new Date().toISOString().split("T")[0] }),
+        });
+      }
+      await fetchContract();
+    } catch { alert("상태 변경 실패"); }
+  };
+
+  // 일정 수동 추가
+  const handleAddSchedule = async () => {
+    if (!contract || !scheduleForm.phase_name) return;
+    setScheduleSaving(true);
+    try {
+      const res = await fetch("/api/schedules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contract_id: contract.id,
+          phase_name: scheduleForm.phase_name,
+          start_date: scheduleForm.start_date || null,
+          end_date: scheduleForm.end_date || null,
+        }),
+      });
+      if (res.ok) {
+        setShowScheduleForm(false);
+        setScheduleForm({ phase_name: "", start_date: "", end_date: "" });
+        await fetchContract();
+      }
+    } catch { alert("일정 추가 실패"); }
+    setScheduleSaving(false);
+  };
+
+  // 일정 상태 토글
+  const handleScheduleStatusToggle = async (scheduleId: string, currentStatus: string) => {
+    const next = currentStatus === "pending" ? "in_progress" : currentStatus === "in_progress" ? "completed" : null;
+    if (!next) return;
+    try {
+      await fetch(`/api/schedules/${scheduleId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: next }),
+      });
+      await fetchContract();
+    } catch { alert("상태 변경 실패"); }
+  };
+
   const handleStatusChange = async (newStatus: string) => {
     if (!contract) return;
     setStatusChanging(true);
@@ -274,8 +356,12 @@ export default function ContractDetailPage() {
         return;
       }
 
-      // Refetch to get updated data including new payments
+      // Refetch to get updated data including new payments/schedules
       await fetchContract();
+
+      if (newStatus === "signed") {
+        alert("✅ 계약이 체결되었습니다!\n\n• 프로젝트 일정이 자동 생성되었습니다.\n• 정산 스케줄(선금/잔금)이 자동 생성되었습니다.\n\n각 탭에서 확인하세요.");
+      }
     } catch {
       alert("상태 변경 중 오류가 발생했습니다.");
     } finally {
@@ -567,6 +653,44 @@ export default function ContractDetailPage() {
               <p className="text-sm text-muted-foreground">거래처 정보가 없습니다.</p>
             )}
           </div>
+
+          {/* 계약서 AI 생성 */}
+          <div className="lg:col-span-2 rounded-lg border bg-card p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold flex items-center gap-2">
+                <ClipboardList className="h-4 w-4" />
+                계약서 생성
+              </h3>
+              <Button size="sm" onClick={handleGenerateDoc} disabled={docGenerating}>
+                {docGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {docGenerating ? "생성 중..." : "AI 계약서 생성"}
+              </Button>
+            </div>
+            {docText ? (
+              <div className="space-y-3">
+                <div className="max-h-96 overflow-y-auto rounded-md border bg-muted/50 p-4 text-sm whitespace-pre-wrap font-mono">
+                  {docText}
+                </div>
+                <div className="flex gap-2">
+                  <a
+                    href={`mailto:${contract.clients?.contact_email || ""}?subject=${encodeURIComponent(`[ADOA] ${contract.project_name} 계약서`)}&body=${encodeURIComponent(docText)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Button size="sm" variant="outline">메일 발송 준비</Button>
+                  </a>
+                  <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(docText); alert("복사되었습니다."); }}>
+                    복사
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setDocText(null)}>닫기</Button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                AI가 계약 정보를 기반으로 공식 계약서를 자동 생성합니다.
+              </p>
+            )}
+          </div>
         </div>
       )}
 
@@ -595,6 +719,7 @@ export default function ContractDetailPage() {
                     <th className="px-4 py-3 text-left font-medium">청구일</th>
                     <th className="px-4 py-3 text-left font-medium">입금기한</th>
                     <th className="px-4 py-3 text-left font-medium">상태</th>
+                    <th className="px-4 py-3 text-left font-medium">액션</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -630,6 +755,22 @@ export default function ContractDetailPage() {
                           >
                             {pStatus.label}
                           </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex gap-1">
+                            {payment.status === "pending" && (
+                              <Button size="sm" variant="outline" className="h-7 text-xs"
+                                onClick={() => handlePaymentAction(payment.id, "invoiced", payment)}>
+                                청구완료
+                              </Button>
+                            )}
+                            {["pending", "invoiced", "tax_invoice_issued"].includes(payment.status) && (
+                              <Button size="sm" className="h-7 text-xs"
+                                onClick={() => handlePaymentAction(payment.id, "paid", payment)}>
+                                입금확인
+                              </Button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -865,53 +1006,108 @@ export default function ContractDetailPage() {
       {/* Tab Content: 프로젝트 일정 */}
       {activeTab === "schedules" && (
         <div className="space-y-4">
-          {contract.schedules.length === 0 ? (
+          <div className="flex justify-end">
+            <Button size="sm" onClick={() => setShowScheduleForm(true)}>
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              일정 추가
+            </Button>
+          </div>
+
+          {/* Manual add form */}
+          {showScheduleForm && (
+            <div className="rounded-lg border bg-card p-4 space-y-3">
+              <h4 className="text-sm font-medium">일정 수동 추가</h4>
+              <div className="grid gap-3 sm:grid-cols-4">
+                <div>
+                  <label className="text-xs text-muted-foreground">단계명</label>
+                  <input value={scheduleForm.phase_name}
+                    onChange={(e) => setScheduleForm((p) => ({ ...p, phase_name: e.target.value }))}
+                    placeholder="예: 현장 답사"
+                    className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">시작일</label>
+                  <input type="date" value={scheduleForm.start_date}
+                    onChange={(e) => setScheduleForm((p) => ({ ...p, start_date: e.target.value }))}
+                    className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">종료일</label>
+                  <input type="date" value={scheduleForm.end_date}
+                    onChange={(e) => setScheduleForm((p) => ({ ...p, end_date: e.target.value }))}
+                    className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                </div>
+                <div className="flex items-end gap-2">
+                  <Button size="sm" onClick={handleAddSchedule} disabled={scheduleSaving} className="w-full">
+                    {scheduleSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "추가"}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setShowScheduleForm(false)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {contract.schedules.length === 0 && !showScheduleForm ? (
             <div className="rounded-lg border bg-card p-12 text-center">
               <Calendar className="mx-auto h-12 w-12 text-muted-foreground/50" />
-              <h3 className="mt-4 text-lg font-semibold">
-                등록된 일정이 없습니다
-              </h3>
+              <h3 className="mt-4 text-lg font-semibold">등록된 일정이 없습니다</h3>
               <p className="mt-2 text-sm text-muted-foreground">
-                일정 관리에서 이 프로젝트의 제작 일정을 등록하세요.
+                계약 체결 시 자동 생성되거나, 위의 버튼으로 수동 추가하세요.
               </p>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {contract.schedules.map((s) => (
-                <div
-                  key={s.id}
-                  className="flex items-center gap-4 rounded-lg border bg-card p-4"
-                >
-                  <div className="flex-1">
-                    <p className="font-medium">
-                      {s.phase_name || PHASE_LABELS[s.phase] || s.phase}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {formatDate(s.start_date)} ~ {formatDate(s.end_date)}
-                    </p>
-                  </div>
-                  {s.assigned_to && (
-                    <span className="text-sm text-muted-foreground">
-                      {s.assigned_to}
-                    </span>
-                  )}
-                  <span
-                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+          ) : contract.schedules.length > 0 && (
+            <div className="space-y-2">
+              {contract.schedules.map((s) => {
+                const isDelayed = s.status === "pending" && s.end_date && s.end_date < new Date().toISOString().split("T")[0];
+                return (
+                  <div key={s.id} className="flex items-center gap-3 rounded-lg border bg-card p-3 hover:bg-muted/30 transition-colors">
+                    {/* Status indicator + click to toggle */}
+                    <button
+                      onClick={() => handleScheduleStatusToggle(s.id, s.status)}
+                      className={`shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+                        s.status === "completed"
+                          ? "border-green-500 bg-green-500 text-white"
+                          : s.status === "in_progress"
+                          ? "border-blue-500 bg-blue-100 dark:bg-blue-900"
+                          : isDelayed
+                          ? "border-red-500 bg-red-100 dark:bg-red-900"
+                          : "border-gray-300 dark:border-gray-600"
+                      }`}
+                      title={s.status === "pending" ? "클릭: 진행중으로" : s.status === "in_progress" ? "클릭: 완료로" : "완료됨"}
+                    >
+                      {s.status === "completed" && <Check className="h-3 w-3" />}
+                      {s.status === "in_progress" && <div className="w-2 h-2 rounded-full bg-blue-500" />}
+                    </button>
+
+                    <div className="flex-1 min-w-0">
+                      <p className={`font-medium text-sm ${s.status === "completed" ? "line-through text-muted-foreground" : ""}`}>
+                        {s.phase_name || PHASE_LABELS[s.phase] || s.phase}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatDate(s.start_date)} ~ {formatDate(s.end_date)}
+                      </p>
+                    </div>
+
+                    {s.assigned_to && (
+                      <span className="text-xs text-muted-foreground">{s.assigned_to}</span>
+                    )}
+
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
                       s.status === "completed"
                         ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
                         : s.status === "in_progress"
                         ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
+                        : isDelayed
+                        ? "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300"
                         : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                    }`}
-                  >
-                    {s.status === "completed"
-                      ? "완료"
-                      : s.status === "in_progress"
-                      ? "진행중"
-                      : "대기"}
-                  </span>
-                </div>
-              ))}
+                    }`}>
+                      {s.status === "completed" ? "완료" : s.status === "in_progress" ? "진행중" : isDelayed ? "지연" : "대기"}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

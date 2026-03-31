@@ -61,7 +61,13 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [attachedFile, setAttachedFile] = useState<{ name: string; text: string } | null>(null);
+  const [attachedFile, setAttachedFile] = useState<{
+    name: string;
+    text: string;
+    size: number;
+    imageBase64?: string;
+    isImage?: boolean;
+  } | null>(null);
   const [fileUploading, setFileUploading] = useState(false);
 
   // Auto-scroll on new messages
@@ -99,16 +105,27 @@ export default function ChatPage() {
       });
       const data = await res.json();
 
-      if (data.extractedText) {
+      if (data.error) {
+        alert(data.error);
+      } else if (data.isImage && data.imageBase64) {
+        setAttachedFile({
+          name: data.fileName,
+          text: "",
+          size: data.fileSize,
+          imageBase64: data.imageBase64,
+          isImage: true,
+        });
+      } else if (data.extractedText) {
         setAttachedFile({
           name: data.fileName,
           text: data.extractedText,
+          size: data.fileSize,
         });
         if (data.truncated) {
-          alert("파일이 너무 길어 일부만 추출되었습니다 (15,000자).");
+          alert("파일이 너무 길어 일부만 추출되었습니다 (20,000자).");
         }
       } else {
-        alert(data.error || "파일 처리에 실패했습니다.");
+        alert("파일에서 텍스트를 추출할 수 없습니다.");
       }
     } catch {
       alert("파일 업로드 중 오류가 발생했습니다.");
@@ -118,21 +135,14 @@ export default function ChatPage() {
 
   const handleSend = async () => {
     if ((!input.trim() && !attachedFile) || sending) return;
-
-    // 첨부 파일 있으면 내용을 메시지에 포함
-    let userMessage = input.trim();
-    if (attachedFile) {
-      const filePrefix = `[첨부: ${attachedFile.name}]\n\n${attachedFile.text}`;
-      userMessage = userMessage
-        ? `${userMessage}\n\n---\n${filePrefix}`
-        : `이 파일의 내용을 분석해줘.\n\n---\n${filePrefix}`;
-    }
+    const userMessage = input.trim();
+    const currentFile = attachedFile; // capture before clearing
+    const displayMessage = userMessage
+      ? (currentFile ? `📎 ${currentFile.name}\n${userMessage}` : userMessage)
+      : `📎 ${currentFile?.name || "파일"} 분석 요청`;
     setInput("");
     setAttachedFile(null);
     setSending(true);
-
-    // Add user message (show only user-typed text, not full file content)
-    const displayMessage = input.trim() || `📎 ${attachedFile?.name || "파일"} 분석 요청`;
     const userMsg: Message = {
       id: `u-${Date.now()}`,
       role: "user",
@@ -160,10 +170,19 @@ export default function ChatPage() {
         .filter((m) => m.role === "user" || m.role === "assistant")
         .map((m) => ({ role: m.role, content: m.content }));
 
+      // 파일 컨텍스트 포함
+      const payload: Record<string, unknown> = { message: userMessage, history };
+      if (currentFile?.text) {
+        payload.fileContext = `[파일: ${currentFile.name}]\n${currentFile.text}`;
+      }
+      if (currentFile?.imageBase64) {
+        payload.imageBase64 = currentFile.imageBase64;
+      }
+
       const res = await fetch("/api/chat/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMessage, history }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
@@ -408,14 +427,23 @@ export default function ChatPage() {
 
         {/* Attached file indicator */}
         {attachedFile && (
-          <div className="flex items-center gap-2 mb-2 rounded-md bg-muted px-3 py-1.5 text-sm">
-            <Paperclip className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <span className="truncate flex-1">{attachedFile.name}</span>
-            <span className="text-xs text-muted-foreground shrink-0">
-              {(attachedFile.text.length / 1000).toFixed(1)}K자
-            </span>
-            <button onClick={() => setAttachedFile(null)} className="text-muted-foreground hover:text-foreground shrink-0">
-              <X className="h-3.5 w-3.5" />
+          <div className="flex items-center gap-2 mb-2 rounded-lg border bg-muted/50 px-3 py-2 text-sm">
+            {attachedFile.isImage ? (
+              <span className="text-lg shrink-0">🖼️</span>
+            ) : (
+              <Paperclip className="h-4 w-4 text-primary shrink-0" />
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="font-medium truncate">{attachedFile.name}</p>
+              <p className="text-xs text-muted-foreground">
+                {attachedFile.isImage
+                  ? `이미지 · ${(attachedFile.size / 1024).toFixed(0)}KB`
+                  : `${(attachedFile.text.length / 1000).toFixed(1)}K자 추출됨 · ${(attachedFile.size / 1024).toFixed(0)}KB`
+                }
+              </p>
+            </div>
+            <button onClick={() => setAttachedFile(null)} className="text-muted-foreground hover:text-foreground shrink-0 rounded-full hover:bg-muted p-1">
+              <X className="h-4 w-4" />
             </button>
           </div>
         )}

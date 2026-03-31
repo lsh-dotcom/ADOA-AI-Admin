@@ -43,9 +43,9 @@ PM의 입력을 분석해서 어떤 에이전트가 처리해야 하는지 판�
 
 // POST /api/chat/send - Supabase 없이 직접 OpenRouter 호출
 export async function POST(request: NextRequest) {
-  const { message, history } = await request.json();
+  const { message, history, fileContext, imageBase64 } = await request.json();
 
-  if (!message?.trim()) {
+  if (!message?.trim() && !fileContext && !imageBase64) {
     return NextResponse.json({ error: "메시지를 입력해주세요." }, { status: 400 });
   }
 
@@ -58,14 +58,31 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // Build message history
+  // Build user content
+  let userContent: string | Array<{ type: string; text?: string; image_url?: { url: string } }>;
+
+  if (imageBase64) {
+    // 이미지 첨부 → vision API 사용
+    userContent = [
+      { type: "text", text: message || "이 이미지의 내용을 분석해줘." },
+      { type: "image_url", image_url: { url: imageBase64 } },
+    ];
+  } else if (fileContext) {
+    // 파일 텍스트 첨부
+    const filePrefix = `[첨부 파일 내용]\n${fileContext}\n[/첨부 파일 끝]\n\n`;
+    userContent = filePrefix + (message || "이 파일의 내용을 분석해줘.");
+  } else {
+    userContent = message;
+  }
+
+  // Build message history (파일 컨텍스트가 있는 이전 메시지도 포함)
   const messages = [
     { role: "system", content: ROUTER_PROMPT },
     ...(history || []).slice(-10).map((m: { role: string; content: string }) => ({
       role: m.role === "assistant" ? "assistant" : "user",
       content: m.content,
     })),
-    { role: "user", content: message },
+    { role: "user", content: userContent },
   ];
 
   try {

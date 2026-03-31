@@ -14,6 +14,7 @@ import {
   ExternalLink,
   Paperclip,
   Trash2,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -59,6 +60,9 @@ export default function ChatPage() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [attachedFile, setAttachedFile] = useState<{ name: string; text: string } | null>(null);
+  const [fileUploading, setFileUploading] = useState(false);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -78,17 +82,61 @@ export default function ChatPage() {
     inputRef.current?.focus();
   };
 
+  // 파일 첨부 처리
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = ""; // reset
+
+    setFileUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/chat/extract-file", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+
+      if (data.extractedText) {
+        setAttachedFile({
+          name: data.fileName,
+          text: data.extractedText,
+        });
+        if (data.truncated) {
+          alert("파일이 너무 길어 일부만 추출되었습니다 (15,000자).");
+        }
+      } else {
+        alert(data.error || "파일 처리에 실패했습니다.");
+      }
+    } catch {
+      alert("파일 업로드 중 오류가 발생했습니다.");
+    }
+    setFileUploading(false);
+  };
+
   const handleSend = async () => {
-    if (!input.trim() || sending) return;
-    const userMessage = input.trim();
+    if ((!input.trim() && !attachedFile) || sending) return;
+
+    // 첨부 파일 있으면 내용을 메시지에 포함
+    let userMessage = input.trim();
+    if (attachedFile) {
+      const filePrefix = `[첨부: ${attachedFile.name}]\n\n${attachedFile.text}`;
+      userMessage = userMessage
+        ? `${userMessage}\n\n---\n${filePrefix}`
+        : `이 파일의 내용을 분석해줘.\n\n---\n${filePrefix}`;
+    }
     setInput("");
+    setAttachedFile(null);
     setSending(true);
 
-    // Add user message
+    // Add user message (show only user-typed text, not full file content)
+    const displayMessage = input.trim() || `📎 ${attachedFile?.name || "파일"} 분석 요청`;
     const userMsg: Message = {
       id: `u-${Date.now()}`,
       role: "user",
-      content: userMessage,
+      content: displayMessage,
       agent: null,
       contractData: null,
       timestamp: Date.now(),
@@ -358,14 +406,48 @@ export default function ChatPage() {
           </div>
         )}
 
+        {/* Attached file indicator */}
+        {attachedFile && (
+          <div className="flex items-center gap-2 mb-2 rounded-md bg-muted px-3 py-1.5 text-sm">
+            <Paperclip className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <span className="truncate flex-1">{attachedFile.name}</span>
+            <span className="text-xs text-muted-foreground shrink-0">
+              {(attachedFile.text.length / 1000).toFixed(1)}K자
+            </span>
+            <button onClick={() => setAttachedFile(null)} className="text-muted-foreground hover:text-foreground shrink-0">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+        {fileUploading && (
+          <div className="flex items-center gap-2 mb-2 text-sm text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <span>파일 내용 추출 중...</span>
+          </div>
+        )}
+
         <div className="flex gap-2">
-          <Button size="icon" variant="ghost" className="shrink-0 text-muted-foreground">
-            <Paperclip className="h-4 w-4" />
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.txt,.csv,.json,.md,.docx"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          <Button
+            size="icon"
+            variant="ghost"
+            className="shrink-0 text-muted-foreground"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={fileUploading}
+          >
+            {fileUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
           </Button>
           <input
             ref={inputRef}
             type="text"
-            placeholder="업무를 지시하세요... (@으로 에이전트 호출)"
+            placeholder={attachedFile ? `${attachedFile.name}에 대해 질문하세요...` : "업무를 지시하세요... (@으로 에이전트 호출)"}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
@@ -377,7 +459,7 @@ export default function ChatPage() {
             disabled={sending}
             className="flex-1 rounded-lg border border-input bg-background px-4 py-2.5 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
-          <Button onClick={handleSend} disabled={sending || !input.trim()} size="icon" className="shrink-0">
+          <Button onClick={handleSend} disabled={sending || (!input.trim() && !attachedFile)} size="icon" className="shrink-0">
             {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </Button>
         </div>

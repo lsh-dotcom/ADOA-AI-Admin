@@ -2,28 +2,43 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   LayoutDashboard,
+  FileSignature,
+  Calculator,
+  UserCheck,
+  CalendarDays,
   Users,
-  Settings,
-  FileText,
-  BarChart3,
   Bot,
+  Settings,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
+import { createClient } from "@/lib/supabase/client";
 
 const navigation = [
   { name: "대시보드", href: "/", icon: LayoutDashboard },
-  { name: "AI 에이전트", href: "/agents", icon: Bot },
-  { name: "사용자 관리", href: "/users", icon: Users },
-  { name: "보고서", href: "/reports", icon: BarChart3 },
-  { name: "문서", href: "/documents", icon: FileText },
+  { name: "계약 관리", href: "/contracts", icon: FileSignature },
+  { name: "정산 관리", href: "/payments", icon: Calculator },
+  { name: "프리랜서 관리", href: "/freelancers", icon: UserCheck },
+  { name: "일정 관리", href: "/schedules", icon: CalendarDays },
+  { name: "인사 관리", href: "/hr", icon: Users },
+  { name: "AI 채팅", href: "/ai-chat", icon: Bot },
   { name: "설정", href: "/settings", icon: Settings },
 ];
 
 export function SidebarContent() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -55,7 +70,14 @@ export function SidebarContent() {
         })}
       </nav>
       <Separator />
-      <div className="p-4">
+      <div className="p-4 space-y-3">
+        <button
+          onClick={handleLogout}
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+        >
+          <LogOut className="h-4 w-4" />
+          로그아웃
+        </button>
         <p className="text-xs text-muted-foreground">
           ADOA AI Admin v0.1.0
         </p>

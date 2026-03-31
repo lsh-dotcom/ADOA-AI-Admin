@@ -25,7 +25,7 @@ const navigation = [
   { name: "프리랜서 관리", href: "/freelancers", icon: UserCheck },
   { name: "일정 관리", href: "/schedules", icon: CalendarDays },
   { name: "인사 관리", href: "/hr", icon: Users },
-  { name: "AI 채팅", href: "/ai-chat", icon: Bot },
+  { name: "AI 채팅", href: "/chat", icon: Bot },
   { name: "설정", href: "/settings", icon: Settings },
 ];
 

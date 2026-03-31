@@ -21,7 +21,7 @@ import { createClient } from "@/lib/supabase/client";
 const navigation = [
   { name: "대시보드", href: "/", icon: LayoutDashboard },
   { name: "계약 관리", href: "/contracts", icon: FileSignature },
-  { name: "정산 관리", href: "/payments", icon: Calculator },
+  { name: "정산 관리", href: "/billing", icon: Calculator },
   { name: "프리랜서 관리", href: "/freelancers", icon: UserCheck },
   { name: "일정 관리", href: "/schedules", icon: CalendarDays },
   { name: "인사 관리", href: "/hr", icon: Users },

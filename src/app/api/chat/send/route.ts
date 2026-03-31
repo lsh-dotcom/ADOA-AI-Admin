@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
         "X-Title": "ADOA AI Admin",
       },
       body: JSON.stringify({
-        model: "anthropic/claude-sonnet-4-20250514",
+        model: "anthropic/claude-3.5-sonnet",
         messages,
       }),
     });

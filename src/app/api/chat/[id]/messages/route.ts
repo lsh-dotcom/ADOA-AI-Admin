@@ -185,7 +185,7 @@ async function callRouter(apiKey: string, userMessage: string) {
       "X-Title": "ADOA AI Admin",
     },
     body: JSON.stringify({
-      model: "anthropic/claude-sonnet-4-20250514",
+      model: "anthropic/claude-3.5-sonnet",
       messages: [
         { role: "system", content: ROUTER_PROMPT },
         { role: "user", content: userMessage },
@@ -270,7 +270,7 @@ async function handleContractAgent(
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "HTTP-Referer": "https://adoa-ai-admin.vercel.app", "X-Title": "ADOA AI Admin" },
     body: JSON.stringify({
-      model: "anthropic/claude-sonnet-4-20250514",
+      model: "anthropic/claude-3.5-sonnet",
       messages: [
         {
           role: "system",
@@ -521,7 +521,7 @@ async function handleGeneralAgent(apiKey: string, message: string) {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "HTTP-Referer": "https://adoa-ai-admin.vercel.app", "X-Title": "ADOA AI Admin" },
     body: JSON.stringify({
-      model: "anthropic/claude-sonnet-4-20250514",
+      model: "anthropic/claude-3.5-sonnet",
       messages: [
         {
           role: "system",

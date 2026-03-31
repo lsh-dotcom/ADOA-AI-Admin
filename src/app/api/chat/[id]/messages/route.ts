@@ -181,6 +181,8 @@ async function callRouter(apiKey: string, userMessage: string) {
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
+      "HTTP-Referer": "https://adoa-ai-admin.vercel.app",
+      "X-Title": "ADOA AI Admin",
     },
     body: JSON.stringify({
       model: "anthropic/claude-sonnet-4-20250514",
@@ -266,7 +268,7 @@ async function handleContractAgent(
   // 생성 의도 → AI 파싱
   const parseRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "HTTP-Referer": "https://adoa-ai-admin.vercel.app", "X-Title": "ADOA AI Admin" },
     body: JSON.stringify({
       model: "anthropic/claude-sonnet-4-20250514",
       messages: [
@@ -517,7 +519,7 @@ async function handleHRAgent(
 async function handleGeneralAgent(apiKey: string, message: string) {
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "HTTP-Referer": "https://adoa-ai-admin.vercel.app", "X-Title": "ADOA AI Admin" },
     body: JSON.stringify({
       model: "anthropic/claude-sonnet-4-20250514",
       messages: [

@@ -61,6 +61,8 @@ export async function POST(request: NextRequest) {
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
+          "HTTP-Referer": "https://adoa-ai-admin.vercel.app",
+          "X-Title": "ADOA AI Admin",
         },
         body: JSON.stringify({
           model: "anthropic/claude-sonnet-4-20250514",

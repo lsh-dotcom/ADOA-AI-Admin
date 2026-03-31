@@ -133,6 +133,50 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  // 6. 원천세 반기 신고 리마인더 (1월, 7월 1~10일)
+  const month = today.getMonth() + 1; // 1-based
+  const day = today.getDate();
+  if ((month === 1 || month === 7) && day <= 10) {
+    // 이전 반기 기간 계산
+    const year = today.getFullYear();
+    let periodStart: string;
+    let periodEnd: string;
+    let periodLabel: string;
+    if (month === 1) {
+      periodStart = `${year - 1}-07-01`;
+      periodEnd = `${year - 1}-12-31`;
+      periodLabel = `${year - 1}년 하반기`;
+    } else {
+      periodStart = `${year}-01-01`;
+      periodEnd = `${year}-06-30`;
+      periodLabel = `${year}년 상반기`;
+    }
+
+    const { data: halfYearPayments } = await supabase
+      .from("freelancer_assignments")
+      .select("total_fee, withholding_tax")
+      .eq("payment_status", "paid")
+      .gte("paid_date", periodStart)
+      .lte("paid_date", periodEnd);
+
+    const totalFee = (halfYearPayments || []).reduce(
+      (s: number, a: { total_fee: number | null }) => s + (Number(a.total_fee) || 0), 0
+    );
+    const totalTax = (halfYearPayments || []).reduce(
+      (s: number, a: { withholding_tax: number | null }) => s + (Number(a.withholding_tax) || 0), 0
+    );
+
+    if (totalFee > 0) {
+      notifications.push({
+        type: "withholding_tax_reminder",
+        title: "반기 원천세 신고 기간",
+        message: `${periodLabel} 원천세 신고 기간입니다.\n프리랜서 지급 총액: ${totalFee.toLocaleString()}원\n원천세 총액: ${totalTax.toLocaleString()}원`,
+        severity: "warning",
+        target_role: "ceo",
+      });
+    }
+  }
+
   // 알림 일괄 발송
   if (notifications.length > 0) {
     await notifier.notifyBatch(notifications);

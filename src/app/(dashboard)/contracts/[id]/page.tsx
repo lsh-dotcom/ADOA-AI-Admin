@@ -13,6 +13,9 @@ import {
   Edit3,
   Check,
   X,
+  Plus,
+  Trash2,
+  CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -79,7 +82,26 @@ type Assignment = {
   withholding_tax: number | null;
   net_payment: number | null;
   payment_status: string;
-  freelancers: { name: string; specialty: string | null } | null;
+  freelancers: {
+    name: string;
+    specialty: string | null;
+    bank_name?: string | null;
+    account_number_masked?: string;
+  } | null;
+};
+
+type FreelancerOption = {
+  id: string;
+  name: string;
+  specialty: string | null;
+  daily_rate: number | null;
+};
+
+const ASSIGNMENT_STATUS_LABELS: Record<string, { label: string; color: string }> = {
+  pending: { label: "대기", color: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300" },
+  client_paid: { label: "대금입금", color: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300" },
+  approved: { label: "승인됨", color: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300" },
+  paid: { label: "지급완료", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300" },
 };
 
 type Schedule = {
@@ -121,6 +143,12 @@ export default function ContractDetailPage() {
   const [statusChanging, setStatusChanging] = useState(false);
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  // 프리랜서 투입 관련
+  const [freelancerOptions, setFreelancerOptions] = useState<FreelancerOption[]>([]);
+  const [showAssignForm, setShowAssignForm] = useState(false);
+  const [assignForm, setAssignForm] = useState({ freelancer_id: "", work_days: "", daily_rate: "" });
+  const [assignSaving, setAssignSaving] = useState(false);
+  const [selectedAssignments, setSelectedAssignments] = useState<Set<string>>(new Set());
 
   const fetchContract = useCallback(async () => {
     try {
@@ -141,6 +169,93 @@ export default function ContractDetailPage() {
   useEffect(() => {
     fetchContract();
   }, [fetchContract]);
+
+  // 프리랜서 목록 로드
+  useEffect(() => {
+    fetch("/api/freelancers")
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setFreelancerOptions(data);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleAddAssignment = async () => {
+    if (!assignForm.freelancer_id || !assignForm.work_days || !assignForm.daily_rate) {
+      alert("프리랜서, 일수, 일당을 모두 입력해주세요.");
+      return;
+    }
+    setAssignSaving(true);
+    try {
+      const res = await fetch("/api/assignments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contract_id: params.id,
+          ...assignForm,
+        }),
+      });
+      if (res.ok) {
+        setShowAssignForm(false);
+        setAssignForm({ freelancer_id: "", work_days: "", daily_rate: "" });
+        await fetchContract();
+      } else {
+        const err = await res.json();
+        alert(err.error || "추가에 실패했습니다.");
+      }
+    } catch {
+      alert("오류가 발생했습니다.");
+    }
+    setAssignSaving(false);
+  };
+
+  const handleDeleteAssignment = async (id: string) => {
+    if (!confirm("투입을 삭제하시겠습니까?")) return;
+    try {
+      await fetch(`/api/assignments/${id}`, { method: "DELETE" });
+      await fetchContract();
+    } catch {
+      alert("삭제 실패");
+    }
+  };
+
+  const handleApproveAssignments = async (action: "approve" | "paid") => {
+    const ids = Array.from(selectedAssignments);
+    if (ids.length === 0) {
+      alert("선택된 항목이 없습니다.");
+      return;
+    }
+    try {
+      const res = await fetch("/api/assignments/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignment_ids: ids, action }),
+      });
+      if (res.ok) {
+        setSelectedAssignments(new Set());
+        await fetchContract();
+      } else {
+        const err = await res.json();
+        alert(err.error || "처리 실패");
+      }
+    } catch {
+      alert("오류가 발생했습니다.");
+    }
+  };
+
+  const toggleAssignment = (id: string) => {
+    setSelectedAssignments((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllAssignments = (assignments: Assignment[], status: string) => {
+    const ids = assignments.filter((a) => a.payment_status === status).map((a) => a.id);
+    setSelectedAssignments(new Set(ids));
+  };
 
   const handleStatusChange = async (newStatus: string) => {
     if (!contract) return;
@@ -529,56 +644,217 @@ export default function ContractDetailPage() {
       {/* Tab Content: 프리랜서 투입 */}
       {activeTab === "freelancers" && (
         <div className="space-y-4">
-          {contract.assignments.length === 0 ? (
+          {/* Actions bar */}
+          <div className="flex items-center justify-between">
+            <div className="flex gap-2">
+              {contract.assignments.some((a) => a.payment_status === "client_paid") && (
+                <>
+                  <Button
+                    size="sm"
+                    onClick={() => selectAllAssignments(contract.assignments, "client_paid")}
+                    variant="outline"
+                  >
+                    대금입금 건 전체 선택
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => handleApproveAssignments("approve")}
+                    disabled={selectedAssignments.size === 0}
+                  >
+                    <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
+                    승인 ({selectedAssignments.size})
+                  </Button>
+                </>
+              )}
+              {contract.assignments.some((a) => a.payment_status === "approved") && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => selectAllAssignments(contract.assignments, "approved")}
+                  >
+                    승인 건 전체 선택
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => handleApproveAssignments("paid")}
+                    disabled={selectedAssignments.size === 0}
+                  >
+                    <Check className="mr-1 h-3.5 w-3.5" />
+                    지급 완료 ({selectedAssignments.size})
+                  </Button>
+                </>
+              )}
+            </div>
+            <Button size="sm" onClick={() => setShowAssignForm(true)}>
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              프리랜서 투입
+            </Button>
+          </div>
+
+          {/* Add assignment form */}
+          {showAssignForm && (
+            <div className="rounded-lg border bg-card p-4 space-y-3">
+              <h4 className="font-medium text-sm">프리랜서 투입 추가</h4>
+              <div className="grid gap-3 sm:grid-cols-4">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">프리랜서</label>
+                  <select
+                    value={assignForm.freelancer_id}
+                    onChange={(e) => {
+                      const fId = e.target.value;
+                      setAssignForm((prev) => {
+                        const f = freelancerOptions.find((fo) => fo.id === fId);
+                        return {
+                          ...prev,
+                          freelancer_id: fId,
+                          daily_rate: f?.daily_rate ? String(f.daily_rate) : prev.daily_rate,
+                        };
+                      });
+                    }}
+                    className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <option value="">선택...</option>
+                    {freelancerOptions.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name}{f.specialty ? ` (${f.specialty})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">투입 일수</label>
+                  <input
+                    type="number"
+                    value={assignForm.work_days}
+                    onChange={(e) => setAssignForm((prev) => ({ ...prev, work_days: e.target.value }))}
+                    min="1"
+                    className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">일당 (원)</label>
+                  <input
+                    type="number"
+                    value={assignForm.daily_rate}
+                    onChange={(e) => setAssignForm((prev) => ({ ...prev, daily_rate: e.target.value }))}
+                    className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </div>
+                <div className="flex items-end gap-2">
+                  <Button size="sm" onClick={handleAddAssignment} disabled={assignSaving} className="w-full">
+                    {assignSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "추가"}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setShowAssignForm(false)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              {/* 실시간 계산 미리보기 */}
+              {assignForm.work_days && assignForm.daily_rate && (
+                <div className="text-xs text-muted-foreground bg-muted rounded p-2">
+                  {(() => {
+                    const total = parseInt(assignForm.work_days) * parseInt(assignForm.daily_rate);
+                    const tax = Math.round(total * 0.033);
+                    return `총액 ${formatKRW(total)} · 원천세 3.3% ${formatKRW(tax)} · 실지급 ${formatKRW(total - tax)}`;
+                  })()}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Summary */}
+          {contract.assignments.length > 0 && (
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-md bg-muted p-3 text-sm">
+                <p className="text-muted-foreground">총 투입비</p>
+                <p className="text-lg font-bold">
+                  {formatKRW(contract.assignments.reduce((s, a) => s + (a.total_fee || 0), 0))}
+                </p>
+              </div>
+              <div className="rounded-md bg-muted p-3 text-sm">
+                <p className="text-muted-foreground">원천세 합계</p>
+                <p className="text-lg font-bold">
+                  {formatKRW(contract.assignments.reduce((s, a) => s + (a.withholding_tax || 0), 0))}
+                </p>
+              </div>
+              <div className="rounded-md bg-muted p-3 text-sm">
+                <p className="text-muted-foreground">실지급 합계</p>
+                <p className="text-lg font-bold">
+                  {formatKRW(contract.assignments.reduce((s, a) => s + (a.net_payment || 0), 0))}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Table */}
+          {contract.assignments.length === 0 && !showAssignForm ? (
             <div className="rounded-lg border bg-card p-12 text-center">
               <Users className="mx-auto h-12 w-12 text-muted-foreground/50" />
-              <h3 className="mt-4 text-lg font-semibold">
-                투입된 프리랜서가 없습니다
-              </h3>
+              <h3 className="mt-4 text-lg font-semibold">투입된 프리랜서가 없습니다</h3>
               <p className="mt-2 text-sm text-muted-foreground">
-                프리랜서 관리에서 이 프로젝트에 프리랜서를 배정하세요.
+                위의 &quot;프리랜서 투입&quot; 버튼으로 프리랜서를 배정하세요.
               </p>
             </div>
-          ) : (
+          ) : contract.assignments.length > 0 && (
             <div className="rounded-lg border">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/50">
-                    <th className="px-4 py-3 text-left font-medium">이름</th>
-                    <th className="px-4 py-3 text-left font-medium">전문분야</th>
-                    <th className="px-4 py-3 text-right font-medium">일수</th>
-                    <th className="px-4 py-3 text-right font-medium">일당</th>
-                    <th className="px-4 py-3 text-right font-medium">총액</th>
-                    <th className="px-4 py-3 text-right font-medium">원천세</th>
-                    <th className="px-4 py-3 text-right font-medium">실지급</th>
-                    <th className="px-4 py-3 text-left font-medium">상태</th>
+                    <th className="px-3 py-3 w-8">
+                      <span className="sr-only">선택</span>
+                    </th>
+                    <th className="px-3 py-3 text-left font-medium">이름</th>
+                    <th className="px-3 py-3 text-left font-medium">전문분야</th>
+                    <th className="px-3 py-3 text-right font-medium">일수</th>
+                    <th className="px-3 py-3 text-right font-medium">일당</th>
+                    <th className="px-3 py-3 text-right font-medium">총액</th>
+                    <th className="px-3 py-3 text-right font-medium">원천세</th>
+                    <th className="px-3 py-3 text-right font-medium">실지급</th>
+                    <th className="px-3 py-3 text-left font-medium">상태</th>
+                    <th className="px-3 py-3 w-8"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {contract.assignments.map((a) => (
-                    <tr key={a.id} className="border-b last:border-0">
-                      <td className="px-4 py-3 font-medium">
-                        {a.freelancers?.name || "-"}
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">
-                        {a.freelancers?.specialty || "-"}
-                      </td>
-                      <td className="px-4 py-3 text-right">{a.work_days || "-"}</td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        {formatKRW(a.daily_rate)}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        {formatKRW(a.total_fee)}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
-                        {formatKRW(a.withholding_tax)}
-                      </td>
-                      <td className="px-4 py-3 text-right font-medium tabular-nums">
-                        {formatKRW(a.net_payment)}
-                      </td>
-                      <td className="px-4 py-3">{a.payment_status}</td>
-                    </tr>
-                  ))}
+                  {contract.assignments.map((a) => {
+                    const st = ASSIGNMENT_STATUS_LABELS[a.payment_status] || ASSIGNMENT_STATUS_LABELS.pending;
+                    return (
+                      <tr key={a.id} className="border-b last:border-0 hover:bg-muted/30">
+                        <td className="px-3 py-3">
+                          {["client_paid", "approved"].includes(a.payment_status) && (
+                            <input
+                              type="checkbox"
+                              checked={selectedAssignments.has(a.id)}
+                              onChange={() => toggleAssignment(a.id)}
+                              className="rounded border-input"
+                            />
+                          )}
+                        </td>
+                        <td className="px-3 py-3 font-medium">{a.freelancers?.name || "-"}</td>
+                        <td className="px-3 py-3 text-muted-foreground">{a.freelancers?.specialty || "-"}</td>
+                        <td className="px-3 py-3 text-right">{a.work_days || "-"}</td>
+                        <td className="px-3 py-3 text-right tabular-nums">{formatKRW(a.daily_rate)}</td>
+                        <td className="px-3 py-3 text-right tabular-nums">{formatKRW(a.total_fee)}</td>
+                        <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">{formatKRW(a.withholding_tax)}</td>
+                        <td className="px-3 py-3 text-right font-medium tabular-nums">{formatKRW(a.net_payment)}</td>
+                        <td className="px-3 py-3">
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${st.color}`}>
+                            {st.label}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3">
+                          {a.payment_status === "pending" && (
+                            <button
+                              onClick={() => handleDeleteAssignment(a.id)}
+                              className="rounded p-1 hover:bg-red-100 dark:hover:bg-red-900/30 text-muted-foreground hover:text-red-600"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

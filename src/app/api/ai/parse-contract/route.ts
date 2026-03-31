@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
             { role: "system", content: SYSTEM_PROMPT },
             { role: "user", content: text },
           ],
-          response_format: { type: "json_object" },
+          // response_format removed — extract JSON from response text instead
         }),
       }
     );
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const parsed = JSON.parse(content);
+    const parsed = extractJSON(content);
     return NextResponse.json(parsed);
   } catch (error) {
     console.error("AI parse error:", error);
@@ -103,4 +103,22 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+/** Extract JSON from AI response that may contain markdown fences or extra text */
+function extractJSON(text: string) {
+  // Try direct parse first
+  try { return JSON.parse(text); } catch { /* continue */ }
+  // Try extracting from ```json ... ``` block
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenced) {
+    try { return JSON.parse(fenced[1].trim()); } catch { /* continue */ }
+  }
+  // Try finding first { ... } block
+  const braceStart = text.indexOf("{");
+  const braceEnd = text.lastIndexOf("}");
+  if (braceStart !== -1 && braceEnd > braceStart) {
+    try { return JSON.parse(text.slice(braceStart, braceEnd + 1)); } catch { /* continue */ }
+  }
+  throw new Error(`Failed to extract JSON from: ${text.slice(0, 200)}`);
 }

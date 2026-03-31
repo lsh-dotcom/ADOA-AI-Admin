@@ -188,7 +188,7 @@ async function callRouter(apiKey: string, userMessage: string) {
         { role: "system", content: ROUTER_PROMPT },
         { role: "user", content: userMessage },
       ],
-      response_format: { type: "json_object" },
+      // response_format removed — extract JSON from response text instead
     }),
   });
 
@@ -198,8 +198,9 @@ async function callRouter(apiKey: string, userMessage: string) {
     throw new Error(`Router API error: ${res.status} - ${errorBody}`);
   }
   const data = await res.json();
-  console.log("[Router] response:", JSON.stringify(data.choices?.[0]?.message?.content?.slice(0, 200)));
-  return JSON.parse(data.choices[0].message.content);
+  const raw = data.choices?.[0]?.message?.content || "";
+  console.log("[Router] raw response:", raw.slice(0, 300));
+  return extractJSON(raw);
 }
 
 async function executeAgent(
@@ -285,7 +286,7 @@ async function handleContractAgent(
         },
         { role: "user", content: originalMessage },
       ],
-      response_format: { type: "json_object" },
+      // response_format removed — extract JSON from response text instead
     }),
   });
 
@@ -296,7 +297,9 @@ async function handleContractAgent(
   }
 
   const parseData = await parseRes.json();
-  const parsed = JSON.parse(parseData.choices[0].message.content);
+  const rawContent = parseData.choices?.[0]?.message?.content || "";
+  console.log("[ContractAgent] raw response:", rawContent.slice(0, 300));
+  const parsed = extractJSON(rawContent);
 
   // DB에 초안 생성
   let clientId = null;
@@ -535,4 +538,22 @@ async function handleGeneralAgent(apiKey: string, message: string) {
   const data = await res.json();
   console.log("[GeneralAgent] response length:", data.choices?.[0]?.message?.content?.length);
   return { content: data.choices[0].message.content };
+}
+
+/** Extract JSON from AI response that may contain markdown fences or extra text */
+function extractJSON(text: string) {
+  // Try direct parse first
+  try { return JSON.parse(text); } catch { /* continue */ }
+  // Try extracting from ```json ... ``` block
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenced) {
+    try { return JSON.parse(fenced[1].trim()); } catch { /* continue */ }
+  }
+  // Try finding first { ... } block
+  const braceStart = text.indexOf("{");
+  const braceEnd = text.lastIndexOf("}");
+  if (braceStart !== -1 && braceEnd > braceStart) {
+    try { return JSON.parse(text.slice(braceStart, braceEnd + 1)); } catch { /* continue */ }
+  }
+  throw new Error(`Failed to extract JSON from: ${text.slice(0, 200)}`);
 }

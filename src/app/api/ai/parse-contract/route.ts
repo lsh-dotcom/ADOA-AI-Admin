@@ -84,8 +84,10 @@ export async function POST(request: NextRequest) {
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
+    console.log("[ParseContract] response:", content?.slice(0, 300));
 
     if (!content) {
+      console.error("[ParseContract] Empty response from OpenRouter:", JSON.stringify(data));
       return NextResponse.json(
         { error: "AI 응답을 받지 못했습니다." },
         { status: 502 }

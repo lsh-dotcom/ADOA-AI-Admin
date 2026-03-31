@@ -192,8 +192,13 @@ async function callRouter(apiKey: string, userMessage: string) {
     }),
   });
 
-  if (!res.ok) throw new Error(`Router API error: ${res.status}`);
+  if (!res.ok) {
+    const errorBody = await res.text();
+    console.error("[Router] OpenRouter API error:", res.status, errorBody);
+    throw new Error(`Router API error: ${res.status} - ${errorBody}`);
+  }
   const data = await res.json();
+  console.log("[Router] response:", JSON.stringify(data.choices?.[0]?.message?.content?.slice(0, 200)));
   return JSON.parse(data.choices[0].message.content);
 }
 
@@ -285,7 +290,9 @@ async function handleContractAgent(
   });
 
   if (!parseRes.ok) {
-    return { content: "계약 정보 분석에 실패했습니다. 다시 시도해주세요." };
+    const errorBody = await parseRes.text();
+    console.error("[ContractAgent] OpenRouter API error:", parseRes.status, errorBody);
+    return { content: `계약 정보 분석에 실패했습니다 (${parseRes.status}). 다시 시도해주세요.` };
   }
 
   const parseData = await parseRes.json();
@@ -520,7 +527,12 @@ async function handleGeneralAgent(apiKey: string, message: string) {
     }),
   });
 
-  if (!res.ok) return { content: "응답을 생성할 수 없습니다." };
+  if (!res.ok) {
+    const errorBody = await res.text();
+    console.error("[GeneralAgent] OpenRouter API error:", res.status, errorBody);
+    return { content: `응답을 생성할 수 없습니다 (${res.status}).` };
+  }
   const data = await res.json();
+  console.log("[GeneralAgent] response length:", data.choices?.[0]?.message?.content?.length);
   return { content: data.choices[0].message.content };
 }

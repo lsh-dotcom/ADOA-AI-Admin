@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
-import { AppLayout } from "@/components/layout/app-layout";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -17,7 +16,7 @@ const geistMono = localFont({
 
 export const metadata: Metadata = {
   title: "ADOA AI Admin",
-  description: "ADOA AI 관리자 대시보드",
+  description: "ADOA AI 기반 경영지원 시스템 (계약/정산/프리랜서/인사 관리)",
 };
 
 export default function RootLayout({
@@ -36,7 +35,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <AppLayout>{children}</AppLayout>
+          {children}
         </ThemeProvider>
       </body>
     </html>
